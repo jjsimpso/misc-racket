@@ -12,8 +12,23 @@
           (freeze (above t (beside t t)))]))
 |#
 
-(require racket/gui/base)
-(require racket/flonum)
+(require racket/gui/base
+         racket/flonum)
+
+#|
+;; this bit of code replaces the standard flonum functions with their unsafe versions,
+;; but I don't see a performance improvement when using it.
+
+(require racket/require racket/require-syntax)
+
+(define-require-syntax overriding-in
+  (syntax-rules () [(_ R1 R2) (combine-in R2 (subtract-in R1 R2))]))
+
+(require (overriding-in
+          racket/flonum
+          (filtered-in (lambda (name) (regexp-replace #rx"unsafe-" name ""))
+                       racket/unsafe/ops)))
+|#
 
 (struct range (min max)
         #:transparent)
@@ -28,7 +43,15 @@
   (lambda (x) (* c x (- 1 x))))
 
 (define (make-quadratic-func c)
-  (lambda (x) (+ (* x x) c)))
+  (lambda (x) (+ (* x x) c))
+  #;(lambda (x)
+    (define rx (flreal-part x))
+    (define ix (flimag-part x))
+    (+ (make-flrectangular
+        (fl- (fl* rx rx) (fl* ix ix))
+        (fl+ (fl* rx ix) (fl* rx ix)))
+       c))
+  )
 
 (define (iterate f x i)
   (if (= i 1) (f x)
@@ -235,13 +258,12 @@
   (send dc get-bitmap))
 
 ;; z is a complex number
-(define (orbit-escapes f escape-value before-iter z)
-  (define (orbit-escapes-helper z i)
-    (cond [(> (magnitude z) escape-value) #t]
+(define (orbit-escapes f escape-value before-iter initial-z)
+  (let loop ([z initial-z]
+             [i 0])
+    (cond [(fl> (magnitude z) escape-value) #t]
           [(>= i before-iter) #f]
-          [else (orbit-escapes-helper (f z) (+ i 1))]))
-
-  (orbit-escapes-helper z 0))
+          [else (loop (f z) (+ i 1))])))
 
 ;; ex: (plot-julia-set (make-quadratic-func (make-rectangular -1 0)) 20 2.0 4 4 200 200)
 (define (plot-julia-set f escape-iter escape-magnitude x-axis-length y-axis-length width height)
@@ -278,9 +300,11 @@
   (define fill-color (make-color 0 0 0))
   (define back-color (make-color 255 255 255))
   
-  (define x-scale (/ x-axis-length width))
-  (define y-scale (/ y-axis-length height))
-
+  (define x-scale (->fl (/ x-axis-length width)))
+  (define y-scale (->fl (/ y-axis-length height)))
+  (define x-length (->fl (/ x-axis-length 2.0)))
+  (define y-length (->fl (/ y-axis-length 2.0)))
+  
   (printf "Calculating~n")
   
   (for* ([x (in-range width)]
@@ -289,13 +313,13 @@
     ;(printf ".")
 
     ; using make-flrectangular makes a huge performance difference with some sets
-    (if (orbit-escapes (make-quadratic-func (make-flrectangular (+ (- (/ x-axis-length 2.0))
-                                                                   (* x x-scale))
-                                                                (- (/ y-axis-length 2.0)
-                                                                   (* y y-scale))))
+    (if (orbit-escapes (make-quadratic-func (make-flrectangular (fl+ (fl- x-length)
+                                                                     (fl* (->fl x) x-scale))
+                                                                (fl- y-length
+                                                                     (fl* (->fl y) y-scale))))
                        escape-magnitude 
                        escape-iter 
-                       0)
+                       (make-flrectangular 0.0 0.0))
         (send dc set-pixel x y back-color)
         (send dc set-pixel x y fill-color)))
   
