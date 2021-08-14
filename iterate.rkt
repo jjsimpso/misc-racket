@@ -13,7 +13,8 @@
 |#
 
 (require racket/gui/base
-         racket/flonum)
+         racket/flonum
+         racket/fixnum)
 
 #|
 ;; this bit of code replaces the standard flonum functions with their unsafe versions,
@@ -300,10 +301,10 @@
   (define fill-color (make-color 0 0 0))
   (define back-color (make-color 255 255 255))
   
-  (define x-scale (->fl (/ x-axis-length width)))
-  (define y-scale (->fl (/ y-axis-length height)))
-  (define x-length (->fl (/ x-axis-length 2.0)))
-  (define y-length (->fl (/ y-axis-length 2.0)))
+  (define x-scale (real->double-flonum (/ x-axis-length width)))
+  (define y-scale (real->double-flonum (/ y-axis-length height)))
+  (define x-length (real->double-flonum (/ x-axis-length 2.0)))
+  (define y-length (real->double-flonum (/ y-axis-length 2.0)))
   
   (printf "Calculating~n")
   
