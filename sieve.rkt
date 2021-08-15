@@ -5,7 +5,7 @@
 
 ;(require data/bit-vector)  ;; too slow
 
-;; up-bound is non-inclusive to avoid a bunch of add1's
+;; up-bound is non-inclusive
 (define (run-sieve up-bound)
   (define bstring (make-bytes up-bound 1))
 
@@ -127,4 +127,7 @@
 
 (module+ main
   (validate-results)
+  ;; run garbage collector to prevent GC from the validation to slow down the test
+  (collect-garbage 'major)
+  (collect-garbage 'major)
   (measure-perf run-sieve 1000000 5))
