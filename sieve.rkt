@@ -55,7 +55,7 @@
 
 
 ;; implementation using vectors
-;; up-bound is non-inclusive to avoid a bunch of add1's
+;; up-bound is non-inclusive
 (define (run-sieve/vector up-bound)
   (define pvec (make-vector up-bound #t))
 
@@ -130,4 +130,4 @@
   ;; run garbage collector to prevent GC from the validation to slow down the test
   (collect-garbage 'major)
   (collect-garbage 'major)
-  (measure-perf run-sieve 1000000 5))
+  (time (measure-perf run-sieve 1000000 5)))
