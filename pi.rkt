@@ -3,6 +3,13 @@
 (require racket/flonum)
 (require racket/unsafe/ops)
 (require racket/future)
+(require racket/require)
+
+#;(require (filtered-in
+          (λ (name)
+            (and (regexp-match #rx"^unsafe-fl" name)
+                 (regexp-replace #rx"unsafe-" name "")))
+          racket/unsafe/ops))
 
 (define nthreads 8)
 
