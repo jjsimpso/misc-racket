@@ -29,14 +29,15 @@
 (define (plot-mandlebrot-set escape-iter escape-magnitude x-axis-length y-axis-length width height)
   (define target (make-bitmap width height))
   (define dc (new bitmap-dc% [bitmap target]))
-  (define fill-color (make-color 0 0 0))
-  (define back-color (make-color 255 255 255))
-  
+  (define fill-color (bytes 255 0 0 0));(make-color 0 0 0))
+  (define back-color (bytes 255 255 255 255));(make-color 255 255 255))
+
   (define x-scale (real->double-flonum (/ x-axis-length width)))
   (define y-scale (real->double-flonum (/ y-axis-length height)))
   (define x-length (real->double-flonum (/ x-axis-length 2.0)))
   (define y-length (real->double-flonum (/ y-axis-length 2.0)))
-
+  (define argb-pixels (make-bytes (* width height 4) 0))
+  (define row-bytes (* width 4))
   (define initial-z (make-complex_num 0.0 0.0))
   
   (printf "Calculating~n")
@@ -51,7 +52,8 @@
                        escape-magnitude 
                        escape-iter 
                        initial-z)
-        (send dc set-pixel x y back-color)
-        (send dc set-pixel x y fill-color)))
+        (bytes-copy! argb-pixels (+ (* y row-bytes) (* x 4)) back-color 0 4)
+        (bytes-copy! argb-pixels (+ (* y row-bytes) (* x 4)) fill-color 0 4)))
   
+  (send dc set-argb-pixels 0 0 width height argb-pixels)  
   (send dc get-bitmap))
