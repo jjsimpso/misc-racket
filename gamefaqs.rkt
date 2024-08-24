@@ -157,3 +157,58 @@
     (current-directory d)
     (extract-all-faqs (call-with-input-file dir-list-file find-games-with-faqs))))
 
+
+;; the functions below are for processing the gamefaqs archive created elsewhere into
+;; text files matching my format (with the title and author in the filename)
+
+;; cp -pR ps /tmp/
+;; cd /tmp
+;; find ps -name "faqs" > /tmp/ps-games-w-faqs.txt
+
+(require net/http-easy)
+
+(define (filename-faqcode filename)
+  (define match? (regexp-match #px"-(\\d+)\\.txt$" filename))
+  (if match?
+      (cadr match?)
+      "xxxxx"))
+
+(define (query-faq-html-for-filename faq-path filename)
+  (define url (format "https://gamefaqs.gamespot.com/~a/~a" faq-path (filename-faqcode filename)))
+  (define res (get url
+                   #:max-redirects 0
+                   ; #:user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+                   #:user-agent "Mozilla/5.0 (compatible; archive.org_bot +http://archive.org/details/archive.org_bot) Zeno/01a0e22 warc/v0.8.40"
+                   ))
+  (cond
+    [(equal? (response-status-message res) #"OK")
+     ;(printf "query succeeded: ~a~n" (response-status-code res))
+     (define faq-html (html->xexp (bytes->string/utf-8 (response-body res))))
+     (define faq-title (extract-title-from-html faq-html))
+     (define faq-author (extract-author-from-html faq-html))
+     ;(printf "title=~a, author=~a~n" faq-title faq-author)
+     (response-close! res)
+     (make-faq-filename faq-title faq-author)]
+    [else
+     (printf "query returned ~a~n" (response-status-code res))     
+     (response-close! res)
+     (make-faq-filename (if (path? filename) (path->string filename) filename) "Unknown")]))
+
+(define (convert-all-faqs-in-dir dir game-name dest-root)
+  (for ([faq-file (in-list (directory-list dir))])
+    (define new-filename (query-faq-html-for-filename dir faq-file))
+    (printf "   copying ~a to ~a~n" (build-path dir faq-file) (build-path dest-root game-name new-filename))
+    (define dest-path (build-path dest-root game-name new-filename))
+    (unless (file-exists? dest-path)
+      (copy-file (build-path dir faq-file) dest-path))
+    (sleep (random 10))))
+
+(define (convert-gfaqs-archive dir-list-file copy-to-dir)
+  (define-values (d f r) (split-path dir-list-file))
+  (current-directory d)
+  (define in (open-input-file dir-list-file))
+  (for ([dir (in-lines in)])
+    (printf "converting faqs in ~a~n" dir)
+    (make-directory* (build-path copy-to-dir (extract-game-name dir)))
+    (with-handlers ([exn:fail? (lambda (v) (printf "error: ~a~n" v))])
+      (convert-all-faqs-in-dir dir (extract-game-name dir) copy-to-dir))))
