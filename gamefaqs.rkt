@@ -212,3 +212,28 @@
     (make-directory* (build-path copy-to-dir (extract-game-name dir)))
     (with-handlers ([exn:fail? (lambda (v) (printf "error: ~a~n" v))])
       (convert-all-faqs-in-dir dir (extract-game-name dir) copy-to-dir))))
+
+
+;; code to convert only the missing games from my ps2 archive (probably won't need this again)
+(define (convert-missing-games dir-list-file retrieved-file copy-to-dir)
+  (define retrieved-games (call-with-input-file retrieved-file
+                            (lambda (in)
+                              (for/list ([game (in-lines in)])
+                                game))))
+  (define (already-retrieved? game-name)
+    (member game-name retrieved-games))
+  
+  (define-values (d f r) (split-path dir-list-file))
+  (current-directory d)
+  (define in (open-input-file dir-list-file))
+  
+  (for ([dir (in-lines in)])
+    (define game-name (extract-game-name dir))
+    (cond
+      [(already-retrieved? game-name)
+       (printf "** already got ~a~n" game-name)]
+      [else
+       (printf "** converting faqs in ~a~n" dir)
+       (make-directory* (build-path copy-to-dir game-name))
+       (with-handlers ([exn:fail? (lambda (v) (printf "error: ~a~n" v))])
+         (convert-all-faqs-in-dir dir game-name copy-to-dir))])))
