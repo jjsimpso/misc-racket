@@ -16,6 +16,9 @@
          racket/flonum
          racket/fixnum)
 
+(require racket/future)
+(require future-visualizer)
+
 #|
 ;; this bit of code replaces the standard flonum functions with their unsafe versions,
 ;; but I don't see a performance improvement when using it.
@@ -297,8 +300,8 @@
   (send dc set-argb-pixels 0 0 width height argb-pixels)
   (send dc get-bitmap))
 
-;; ex: (plot-mandlebrot-set 30 2.0 4 4 300 300)
-(define (plot-mandlebrot-set escape-iter escape-magnitude x-axis-length y-axis-length width height)
+;; ex: (plot-mandelbrot-set 30 2.0 4 4 300 300)
+(define (plot-mandelbrot-set escape-iter escape-magnitude x-axis-length y-axis-length width height)
   (define target (make-bitmap width height))
   (define dc (new bitmap-dc% [bitmap target]))
   (define fill-color (bytes 255 0 0 0));(make-color 0 0 0))
@@ -331,7 +334,157 @@
   (send dc set-argb-pixels 0 0 width height argb-pixels)
   (send dc get-bitmap))
 
-(define mandlebrot-frame% 
+;; writes to a buffer of pixels in argb-pixels argument
+(define (calc-orbit-escapes-shared argb-pixels escape-iter escape-magnitude x-length y-length x-scale y-scale batch w h)
+  (define fill-color (bytes 255 0 0 0));(make-color 0 0 0))
+  (define back-color (bytes 255 255 255 255));(make-color 255 255 255))
+  (define row-bytes (* w 4))
+  (define y-start (* batch h))
+  (for ([y (in-range y-start (* (add1 batch) h))])
+    (for ([x (in-range w)])
+      ; using make-flrectangular makes a huge performance difference with some sets
+      (if (orbit-escapes (make-quadratic-func (make-flrectangular (fl+ (fl- x-length)
+                                                                       (fl* (->fl x) x-scale))
+                                                                  (fl- y-length
+                                                                       (fl* (->fl y) y-scale))))
+                         escape-magnitude 
+                         escape-iter 
+                         (make-flrectangular 0.0 0.0))
+          (bytes-copy! argb-pixels (+ (* y row-bytes) (* x 4)) back-color 0 4)
+          (bytes-copy! argb-pixels (+ (* y row-bytes) (* x 4)) fill-color 0 4)))))
+
+;; returns a buffer of pixels
+(define (calc-orbit-escapes escape-iter escape-magnitude x-length y-length x-scale y-scale batch w h)
+  (define fill-color (bytes 255 0 0 0));(make-color 0 0 0))
+  (define back-color (bytes 255 255 255 255));(make-color 255 255 255))
+  (define argb-pixels (make-bytes (* w h 4) 0))
+  (define row-bytes (* w 4))
+  (define y-start (* batch h))
+  (for ([y (in-range y-start (* (add1 batch) h))])
+    (for ([x (in-range w)])
+      ; using make-flrectangular makes a huge performance difference with some sets
+      (if (orbit-escapes (make-quadratic-func (make-flrectangular (fl+ (fl- x-length)
+                                                                       (fl* (->fl x) x-scale))
+                                                                  (fl- y-length
+                                                                       (fl* (->fl y) y-scale))))
+                         escape-magnitude 
+                         escape-iter 
+                         (make-flrectangular 0.0 0.0))
+          (bytes-copy! argb-pixels (+ (* (- y y-start) row-bytes) (* x 4)) back-color 0 4)
+          (bytes-copy! argb-pixels (+ (* (- y y-start) row-bytes) (* x 4)) fill-color 0 4))))
+  argb-pixels)
+
+(define (plot-mandelbrot-set-futures-shared escape-iter escape-magnitude x-axis-length y-axis-length width height)
+  (define target (make-bitmap width height))
+  (define dc (new bitmap-dc% [bitmap target]))
+  
+  (define x-scale (real->double-flonum (/ x-axis-length width)))
+  (define y-scale (real->double-flonum (/ y-axis-length height)))
+  (define x-length (real->double-flonum (/ x-axis-length 2.0)))
+  (define y-length (real->double-flonum (/ y-axis-length 2.0)))
+  (define argb-pixels (make-bytes (* width height 4) 0))
+  
+  (define num-threads (processor-count))
+  (define batch-height (/ height num-threads))
+
+  (printf "Calculating~n")
+  (define fs
+    (for/list ([i num-threads])
+      (future
+       (lambda ()
+         (calc-orbit-escapes-shared argb-pixels escape-iter escape-magnitude x-length y-length x-scale y-scale i width batch-height)))))
+
+  (for ([f (in-list fs)])
+    (touch f))
+  
+  (send dc set-argb-pixels 0 0 width height argb-pixels)
+  (send dc get-bitmap))
+
+(define (plot-mandelbrot-set-threads-shared escape-iter escape-magnitude x-axis-length y-axis-length width height)
+  (define target (make-bitmap width height))
+  (define dc (new bitmap-dc% [bitmap target]))
+  
+  (define x-scale (real->double-flonum (/ x-axis-length width)))
+  (define y-scale (real->double-flonum (/ y-axis-length height)))
+  (define x-length (real->double-flonum (/ x-axis-length 2.0)))
+  (define y-length (real->double-flonum (/ y-axis-length 2.0)))
+  (define argb-pixels (make-bytes (* width height 4) 0))
+  
+  (define num-threads (processor-count))
+  (define batch-height (/ height num-threads))
+
+  (printf "Calculating~n")
+  (define thds
+    (for/list ([i num-threads])
+      (thread
+       (lambda ()
+         (calc-orbit-escapes-shared argb-pixels escape-iter escape-magnitude x-length y-length x-scale y-scale i width batch-height))
+       #:pool 'own
+       #:keep 'results)))
+
+  (for ([thd (in-list thds)])
+    (thread-wait thd))
+  
+  (send dc set-argb-pixels 0 0 width height argb-pixels)
+  (send dc get-bitmap))
+
+(define (plot-mandelbrot-set-futures escape-iter escape-magnitude x-axis-length y-axis-length width height)
+  (define target (make-bitmap width height))
+  (define dc (new bitmap-dc% [bitmap target]))
+  
+  (define x-scale (real->double-flonum (/ x-axis-length width)))
+  (define y-scale (real->double-flonum (/ y-axis-length height)))
+  (define x-length (real->double-flonum (/ x-axis-length 2.0)))
+  (define y-length (real->double-flonum (/ y-axis-length 2.0)))
+  
+  (define num-threads (processor-count))
+  (define batch-height (/ height num-threads))
+
+  (printf "Calculating~n")
+  (define fs
+    (for/list ([i num-threads])
+      (future
+       (lambda ()
+         (calc-orbit-escapes escape-iter escape-magnitude x-length y-length x-scale y-scale i width batch-height)))))
+
+  (define argb-pixels
+    (bytes-append*
+     (for/list ([f (in-list fs)])
+       (touch f))))
+  
+  (send dc set-argb-pixels 0 0 width height argb-pixels)
+  (send dc get-bitmap))
+
+(define (plot-mandelbrot-set-threads escape-iter escape-magnitude x-axis-length y-axis-length width height)
+  (define target (make-bitmap width height))
+  (define dc (new bitmap-dc% [bitmap target]))
+  
+  (define x-scale (real->double-flonum (/ x-axis-length width)))
+  (define y-scale (real->double-flonum (/ y-axis-length height)))
+  (define x-length (real->double-flonum (/ x-axis-length 2.0)))
+  (define y-length (real->double-flonum (/ y-axis-length 2.0)))
+  
+  (define num-threads (processor-count))
+  (define batch-height (/ height num-threads))
+
+  (printf "Calculating~n")
+  (define thds
+    (for/list ([i num-threads])
+      (thread
+       (lambda ()
+         (calc-orbit-escapes escape-iter escape-magnitude x-length y-length x-scale y-scale i width batch-height))
+       #:pool 'own
+       #:keep 'results)))
+
+  (define argb-pixels
+    (bytes-append*
+     (for/list ([thd (in-list thds)])
+       (thread-wait thd))))
+
+  (send dc set-argb-pixels 0 0 width height argb-pixels)
+  (send dc get-bitmap))
+
+(define mandelbrot-frame% 
   (class frame%
 
     (init-field [x-axis-length 4])
@@ -367,13 +520,13 @@
     
 
 
-(define (show-mandlebrot w h)
-  (define frame (new mandlebrot-frame%
-                     [label "Mandlebrot Set"]
+(define (show-mandelbrot w h)
+  (define frame (new mandelbrot-frame%
+                     [label "Mandelbrot Set"]
                      [width w]
                      [height h]))
 
-  (define bitmap (plot-mandlebrot-set 30 2.0 4 4 w h))
+  (define bitmap (plot-mandelbrot-set-futures-shared 30 2.0 4 4 w h))
 
   (new bitmap-canvas% [parent frame] [bitmap bitmap])
   (send frame show #t))
