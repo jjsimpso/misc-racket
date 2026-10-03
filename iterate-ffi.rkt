@@ -25,8 +25,8 @@
           [(>= i before-iter) #f]
           [else (loop (f z) (+ i 1))])))
 
-;; ex: (plot-mandlebrot-set 30 2.0 4 4 300 300)
-(define (plot-mandlebrot-set escape-iter escape-magnitude x-axis-length y-axis-length width height)
+;; ex: (plot-mandelbrot-set 30 2.0 4 4 300 300)
+(define (plot-mandelbrot-set escape-iter escape-magnitude x-axis-length y-axis-length width height)
   (define target (make-bitmap width height))
   (define dc (new bitmap-dc% [bitmap target]))
   (define fill-color (bytes 255 0 0 0));(make-color 0 0 0))
